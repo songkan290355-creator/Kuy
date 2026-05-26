@@ -1,0 +1,126 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+-- สร้าง GUI (ตายแล้วไม่หาย)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AimbotPersistentMenu"
+ScreenGui.Parent = game:GetService("CoreGui")
+ScreenGui.ResetOnSpawn = false 
+
+-- 1. ระบบโดดไม่จำกัด (ทำงานตลอดเวลา)
+UserInputService.JumpRequest:Connect(function()
+    if LocalPlayer.Character then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- 2. สร้างปุ่มวงกลมลากได้
+local DragButton = Instance.new("TextButton")
+local UICorner = Instance.new("UICorner")
+
+DragButton.Name = "AimbotToggle"
+DragButton.Parent = ScreenGui
+DragButton.BackgroundColor3 = Color3.fromRGB(255, 60, 60) -- เริ่มต้นสีแดง (ปิด)
+DragButton.Size = UDim2.new(0, 60, 0, 60)
+DragButton.Position = UDim2.new(0.5, -30, 0.5, -30)
+DragButton.Text = "LOCK: OFF"
+DragButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+DragButton.Font = Enum.Font.SourceSansBold
+DragButton.TextSize = 12
+DragButton.Active = true
+
+UICorner.CornerRadius = UDim.new(1, 0)
+UICorner.Parent = DragButton
+
+-- 3. ระบบลากปุ่มแบบ Smooth Drag (แยกออกจากการกดคลิก)
+local dragging, dragInput, dragStart, startPos
+local hasMoved = false -- เช็คว่าผู้เล่นลากปุ่มอยู่หรือไม่
+
+local function update(input)
+    local delta = input.Position - dragStart
+    DragButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+DragButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        hasMoved = false
+        dragStart = input.Position
+        startPos = DragButton.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+DragButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+        if dragging then hasMoved = true end -- ถ้าขยับเมาส์ขณะกด แปลว่ากำลังลาก
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- 4. ฟังก์ชันค้นหาผู้เล่นที่ใกล้ที่สุด
+local function getClosestPlayer()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return nil
+    end
+
+    local myPos = LocalPlayer.Character.HumanoidRootPart.Position
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") and player.Character:FindFirstChildOfClass("Humanoid") then
+            if player.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
+                local targetPos = player.Character.Head.Position
+                local distance = (targetPos - myPos).Magnitude
+
+                if distance < shortestDistance then
+                    closestPlayer = player
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- 5. ระบบเปิด-ปิด ล็อกหัว และการทำงานลูป
+local isLocking = false
+
+DragButton.MouseButton1Click:Connect(function()
+    if hasMoved then return end -- ถ้าผู้เล่นเพิ่งลากปุ่มเสร็จ ไม่ต้องเปิด/ปิดระบบ
+    
+    isLocking = not isLocking
+    if isLocking then
+        DragButton.Text = "LOCK: ON"
+        DragButton.BackgroundColor3 = Color3.fromRGB(60, 255, 60) -- เปลี่ยนเป็นสีเขียว
+    else
+        DragButton.Text = "LOCK: OFF"
+        DragButton.BackgroundColor3 = Color3.fromRGB(255, 60, 60) -- เปลี่ยนเป็นสีแดง
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if isLocking then
+        local target = getClosestPlayer()
+        if target and target.Character and target.Character:FindFirstChild("Head") then
+            -- หันมุมกล้องไปที่หัวของเป้าหมายโดยตรง
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.Head.Position)
+        end
+    end
+end)
