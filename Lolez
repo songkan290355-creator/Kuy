@@ -1,0 +1,121 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+-- สร้าง GUI (ตายแล้วไม่หาย)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "LockPersistentMenu"
+ScreenGui.Parent = game:GetService("CoreGui")
+ScreenGui.ResetOnSpawn = false 
+
+-- 1. ระบบโดดไม่จำกัด (ทำงานตลอดเวลาเบื้องหลัง)
+UserInputService.JumpRequest:Connect(function()
+    if LocalPlayer.Character then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- 2. สร้างปุ่มวงกลมลากได้
+local DragButton = Instance.new("TextButton")
+local UICorner = Instance.new("UICorner")
+
+DragButton.Name = "AimbotButton"
+DragButton.Parent = ScreenGui
+DragButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255) -- เปลี่ยนเป็นสีฟ้าสำหรับฟังก์ชันล็อคหัว
+DragButton.Size = UDim2.new(0, 60, 0, 60)
+DragButton.Position = UDim2.new(0.5, -30, 0.5, -30)
+DragButton.Text = "LOCK"
+DragButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+DragButton.Font = Enum.Font.SourceSansBold
+DragButton.TextSize = 14
+DragButton.Active = true
+
+UICorner.CornerRadius = UDim.new(1, 0)
+UICorner.Parent = DragButton
+
+-- 3. ระบบลากปุ่มแบบ Smooth Drag
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    DragButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+DragButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = DragButton.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+DragButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- 4. ระบบค้นหาคนที่ใกล้ที่สุด (Get Closest Player)
+local function getClosestPlayer()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return nil
+    end
+
+    local myPos = LocalPlayer.Character.HumanoidRootPart.Position
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") and player.Character:FindFirstChildOfClass("Humanoid") then
+            if player.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
+                local targetPos = player.Character.Head.Position
+                local distance = (targetPos - myPos).Magnitude
+
+                if distance < shortestDistance then
+                    closestPlayer = player
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- 5. ระบบล็อคหัวเมื่อกดปุ่มค้าง (Hold to Lock)
+local isLocking = false
+
+-- ตรวจสอบการกดปุ่ม (ใช้ MouseButton1Down / TouchLongPress หรือดักจากสถานะปุ่ม)
+DragButton.MouseButton1Down:Connect(function()
+    -- ตรวจสอบว่าเป็นการคลิกเพื่อล็อก ไม่ใช่การลาก (ถ้าเคลื่อนที่เมาส์เยอะอาจเป็นการลาก)
+    isLocking = true
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isLocking = false
+    end
+end)
+
+-- ทำการหมุนกล้องไปที่หัวเป้าหมายในทุกๆ เฟรมที่กดค้างไว้
+RunService.RenderStepped:Connect(function()
+    if isLocking and not dragging then -- ล็อคเฉพาะตอนที่ไม่ได้ลากปุ่มไปมา
+        local target = getClosestPlayer()
+        if target and target.Character and target.Character:FindFirstChild("Head") then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.Head.Position)
+        end
+    end
+end)
