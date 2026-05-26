@@ -1,0 +1,152 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+-- สร้าง GUI หลัก (ตายแล้วไม่หาย)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AimbotWithCrosshairMenu"
+ScreenGui.Parent = game:GetService("CoreGui")
+ScreenGui.ResetOnSpawn = false 
+
+-- ==========================================
+-- [1. สร้างเป้าเล็งกลางหน้าจอ (Crosshair)]
+-- ==========================================
+local CrosshairHorizontal = Instance.new("Frame")
+local CrosshairVertical = Instance.new("Frame")
+
+-- เส้นนอน
+CrosshairHorizontal.Name = "CH_Horizontal"
+CrosshairHorizontal.Parent = ScreenGui
+CrosshairHorizontal.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- สีเขียวเรืองแสง
+CrosshairHorizontal.Position = UDim2.new(0.5, -10, 0.5, -1)
+CrosshairHorizontal.Size = UDim2.new(0, 20, 0, 2) -- ความกว้าง 20 พิกเซล หนา 2 พิกเซล
+CrosshairHorizontal.BorderSizePixel = 0
+
+-- เส้นตั้ง
+CrosshairVertical.Name = "CH_Vertical"
+CrosshairVertical.Parent = ScreenGui
+CrosshairVertical.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+CrosshairVertical.Position = UDim2.new(0.5, -1, 0.5, -10)
+CrosshairVertical.Size = UDim2.new(0, 2, 0, 20) -- ความสูง 20 พิกเซล หนา 2 พิกเซล
+CrosshairVertical.BorderSizePixel = 0
+
+-- ==========================================
+-- [2. ระบบโดดไม่จำกัด]
+-- ==========================================
+UserInputService.JumpRequest:Connect(function()
+    if LocalPlayer.Character then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- ==========================================
+-- [3. ปุ่มวงกลมควบคุม เปิด/ปิด + ลากได้]
+-- ==========================================
+local DragButton = Instance.new("TextButton")
+local UICorner = Instance.new("UICorner")
+
+DragButton.Name = "AimbotToggle"
+DragButton.Parent = ScreenGui
+DragButton.BackgroundColor3 = Color3.fromRGB(255, 60, 60) -- เริ่มต้นสีแดง (ปิด)
+DragButton.Size = UDim2.new(0, 60, 0, 60)
+DragButton.Position = UDim2.new(0.5, -30, 0.5, 70) -- ปรับลงมาข้างล่างนิดนึงไม่ให้บังเป้ากลางจอ
+DragButton.Text = "LOCK: OFF"
+DragButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+DragButton.Font = Enum.Font.SourceSansBold
+DragButton.TextSize = 12
+DragButton.Active = true
+
+UICorner.CornerRadius = UDim.new(1, 0)
+UICorner.Parent = DragButton
+
+-- ระบบลากปุ่ม (Smooth Drag)
+local dragging, dragInput, dragStart, startPos
+local hasMoved = false
+
+local function update(input)
+    local delta = input.Position - dragStart
+    DragButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+DragButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        hasMoved = false
+        dragStart = input.Position
+        startPos = DragButton.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+DragButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+        if dragging then hasMoved = true end
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- ==========================================
+-- [4. ระบบค้นหาและล็อกหัว]
+-- ==========================================
+local function getClosestPlayer()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return nil
+    end
+
+    local myPos = LocalPlayer.Character.HumanoidRootPart.Position
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") and player.Character:FindFirstChildOfClass("Humanoid") then
+            if player.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
+                local targetPos = player.Character.Head.Position
+                local distance = (targetPos - myPos).Magnitude
+
+                if distance < shortestDistance then
+                    closestPlayer = player
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+local isLocking = false
+
+DragButton.MouseButton1Click:Connect(function()
+    if hasMoved then return end
+    
+    isLocking = not isLocking
+    if isLocking then
+        DragButton.Text = "LOCK: ON"
+        DragButton.BackgroundColor3 = Color3.fromRGB(60, 255, 60) -- เปลี่ยนเป็นสีเขียว
+    else
+        DragButton.Text = "LOCK: OFF"
+        DragButton.BackgroundColor3 = Color3.fromRGB(255, 60, 60) -- เปลี่ยนเป็นสีแดง
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if isLocking then
+        local target = getClosestPlayer()
+        if target and target.Character and target.Character:FindFirstChild("Head") then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.Head.Position)
+        end
+    end
+end)
